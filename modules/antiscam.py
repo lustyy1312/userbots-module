@@ -1,12 +1,11 @@
 from .. import loader, utils
 import re
-import asyncio
 
 @loader.tds
-class AntiScamProMod(loader.Module):
-    """AntiScam PRO (DB + Settings + AI) | made by @dexonbuy"""
+class AntiScamUltraMod(loader.Module):
+    """AntiScam ULTRA | made by @dexonbuy"""
 
-    strings = {"name": "AntiScamPro"}
+    strings = {"name": "AntiScamUltra"}
 
     def __init__(self):
         self.bad_words = [
@@ -19,62 +18,71 @@ class AntiScamProMod(loader.Module):
     async def client_ready(self, client, db):
         self.db = db
         self.client = client
+        self.me = (await client.get_me()).id
 
-        # настройки по умолчанию
-        if not self.db.get("AntiScam", "enabled"):
+        # дефолт настройки
+        if self.db.get("AntiScam", "enabled") is None:
             self.db.set("AntiScam", "enabled", True)
 
-        if not self.db.get("AntiScam", "notify"):
+        if self.db.get("AntiScam", "notify") is None:
             self.db.set("AntiScam", "notify", True)
 
-        if not self.db.get("AntiScam", "ai"):
-            self.db.set("AntiScam", "ai", False)
+        if self.db.get("AntiScam", "logs") is None:
+            self.db.set("AntiScam", "logs", {})
 
-        print("AntiScam PRO loaded | made by @dexonbuy")
+        if self.db.get("AntiScam", "whitelist") is None:
+            self.db.set("AntiScam", "whitelist", [])
+
+        # сообщение при загрузке
+        try:
+            await client.send_message(
+                "me",
+                "✅ AntiScam ULTRA загружен\nmade by @dexonbuy"
+            )
+        except:
+            pass
 
     async def watcher(self, message):
         if not message.text:
             return
 
-        if not self.db.get("AntiScam", "enabled"):
+        # 👇 получаем юзера
+        user = await message.get_sender()
+
+        # ❌ игнор системного мусора
+        if not user:
+            return
+
+        if user.bot:
+            return
+
+        if user.id == self.me:
+            return
+
+        # ❌ whitelist
+        whitelist = self.db.get("AntiScam", "whitelist", [])
+        if user.id in whitelist:
             return
 
         text = message.text.lower()
+
         suspicious = False
 
+        # ключевые слова
         if any(word in text for word in self.bad_words):
             suspicious = True
 
+        # ссылки
         if self.link_regex.search(text):
             suspicious = True
-
-        # 🧠 AI анализ
-        if self.db.get("AntiScam", "ai"):
-            try:
-                import openai
-                openai.api_key = self.db.get("AntiScam", "api")
-
-                resp = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role":"user","content":f"Это скам? Ответь да или нет: {text}"}]
-                )
-
-                if "да" in resp.choices[0].message.content.lower():
-                    suspicious = True
-            except:
-                pass
 
         if not suspicious:
             return
 
-        user = await message.get_sender()
-        user_id = user.id
-
         logs = self.db.get("AntiScam", "logs", {})
-        logs.setdefault(str(user_id), [])
+        logs.setdefault(str(user.id), [])
 
-        logs[str(user_id)].append(message.text)
-
+        logs[str(user.id)].append(text)
         self.db.set("AntiScam", "logs", logs)
 
         # уведомление
@@ -82,13 +90,13 @@ class AntiScamProMod(loader.Module):
             try:
                 await self.client.send_message(
                     "me",
-                    f"⚠️ Scam detected\nUser: {user_id}\n{text}\n\nmade by @dexonbuy"
+                    f"⚠️ Scam detected\nUser: {user.id}\n{text}\n\nmade by @dexonbuy"
                 )
             except:
                 pass
 
     async def reportcmd(self, message):
-        """<user> — отчет"""
+        """<id> — отчет"""
         args = utils.get_args_raw(message)
 
         logs = self.db.get("AntiScam", "logs", {})
@@ -106,37 +114,55 @@ class AntiScamProMod(loader.Module):
 
         await utils.answer(message, text)
 
+    async def scamlogcmd(self, message):
+        """— чистый лог"""
+        logs = self.db.get("AntiScam", "logs", {})
+
+        if not logs:
+            await utils.answer(message, "📊 Пусто\n\nmade by @dexonbuy")
+            return
+
+        text = "📊 Scam log:\n\n"
+
+        for uid, msgs in logs.items():
+            text += f"{uid}: {len(msgs)} сообщений\n"
+
+        text += "\nmade by @dexonbuy"
+
+        await utils.answer(message, text)
+
+    async def clearscamcmd(self, message):
+        """— очистить лог"""
+        self.db.set("AntiScam", "logs", {})
+        await utils.answer(message, "✅ Лог очищен\n\nmade by @dexonbuy")
+
+    async def whitelistcmd(self, message):
+        """<id> — добавить в whitelist"""
+        args = utils.get_args_raw(message)
+
+        if not args:
+            await utils.answer(message, "❌ Укажи ID\n\nmade by @dexonbuy")
+            return
+
+        wl = self.db.get("AntiScam", "whitelist", [])
+
+        wl.append(int(args))
+        self.db.set("AntiScam", "whitelist", wl)
+
+        await utils.answer(message, f"✅ Добавлен {args}\n\nmade by @dexonbuy")
+
     async def settingscmd(self, message):
         """— настройки"""
         text = (
-            "⚙️ AntiScam Settings\n\n"
+            "⚙️ AntiScam ULTRA\n\n"
             f"Enabled: {self.db.get('AntiScam','enabled')}\n"
-            f"Notify: {self.db.get('AntiScam','notify')}\n"
-            f"AI: {self.db.get('AntiScam','ai')}\n\n"
-            ".toggle — включить/выключить\n"
-            ".notify — уведомления\n"
-            ".ai — включить AI\n\n"
+            f"Notify: {self.db.get('AntiScam','notify')}\n\n"
+            "Команды:\n"
+            ".report <id>\n"
+            ".scamlog\n"
+            ".clearscam\n"
+            ".whitelist <id>\n\n"
             "made by @dexonbuy"
         )
+
         await utils.answer(message, text)
-
-    async def togglecmd(self, message):
-        val = not self.db.get("AntiScam", "enabled")
-        self.db.set("AntiScam", "enabled", val)
-        await utils.answer(message, f"Enabled: {val}\n\nmade by @dexonbuy")
-
-    async def notifycmd(self, message):
-        val = not self.db.get("AntiScam", "notify")
-        self.db.set("AntiScam", "notify", val)
-        await utils.answer(message, f"Notify: {val}\n\nmade by @dexonbuy")
-
-    async def aicmd(self, message):
-        val = not self.db.get("AntiScam", "ai")
-        self.db.set("AntiScam", "ai", val)
-        await utils.answer(message, f"AI: {val}\n\nmade by @dexonbuy")
-
-    async def apikeycmd(self, message):
-        """<key> — установить API ключ"""
-        key = utils.get_args_raw(message)
-        self.db.set("AntiScam", "api", key)
-        await utils.answer(message, "✅ API сохранён\n\nmade by @dexonbuy")
